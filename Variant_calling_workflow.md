@@ -140,7 +140,7 @@ Runs GATK ValidateVariants on the .g.vcf file for chromosome 1, as a spot check
 for correct vcf file generation.
 
 ### 18. Create GenomicsDB databases for each chromosome
-***Rule: gdbi_chromosomes**
+**Rule: gdbi_chromosomes**
 
 Uses GATK GenomicsDBImport to create GenomicsDB databases for each chromosome. 
 It is recommended for >10 samples to speed up genotyping.
