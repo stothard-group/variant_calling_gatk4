@@ -86,9 +86,9 @@ following slurm options:
 	- runtime = 120,  # Requested walltime in minutes
 	- mem_mb = 4000,  # Requested memory in MB
 
-#### Add user-specific files to the reference_files directory
+#### Add user-specific files to the database directory
 
-The following files must be added to the `resources/reference_files` directory.
+The following files must be added to the `db/` directory.
 File names should be specified in `variant_calling.config.yaml`:
 
 - reference genome in Fasta format
