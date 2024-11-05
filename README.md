@@ -51,7 +51,8 @@ Or run the setup.py script to install the required modules:
 
 The workflow is designed to run on a DRAC HPC cluster such as Cedar or Beluga. 
 The programs listed in the Snakemake rules as "module load [program]" can be 
-installed as Conda packages. 
+installed as Conda packages on other systems, with the use of a `conda` variable 
+in the rules and the `--use-conda` flag.
 
 The following R libraries are required:
 
