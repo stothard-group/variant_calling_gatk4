@@ -1,0 +1,19 @@
+## Reference file paths and parameters for SV calling
+
+# Directory containing the reference genome
+reference_dir: "/home/eherman/scratch/Stothard/variant_calling/db/"
+# Basename of the reference genome file (no .fa extension)
+basename: Canis_lupus_familiaris.ROS_Cfam_1.0.dna.toplevel
+# Path to GFF file containing gene annotations
+annotation_gff: "/home/eherman/scratch/Stothard/variant_calling/db/Canis_lupus_familiaris.ROS_Cfam_1.0.112.gff3.gz"
+
+snpsift_executable: "/home/eherman/scratch/Stothard/variant_calling/snpEff/SnpSift.jar"
+
+
+# List of chromosomes for breakdancer
+# Chromosome information
+autosomes_range_first: 1
+autosomes_range_last: 38
+other_chrs: ['X', 'Y']
+# Internal value, do not change
+chr_prefix: ''
