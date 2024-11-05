@@ -1,0 +1,1224 @@
+import os
+import json
+from os.path import join 
+import pandas as pd
+
+localrules: split_contigs_list
+
+#########################################################################################
+# Path to config file
+#########################################################################################
+configfile: 'config/VariantCalling.config.yaml'
+
+#########################################################################################
+# Set local variables
+#########################################################################################
+
+#########################################################################################
+# Values from config file
+#########################################################################################
+CONTIGS_REF = config["reference_dir"]
+RAW_FASTQ_DIR = config["raw_data"]
+OUTPUT_DIR = config["output_dir"]
+REF_DIR = config["reference_dir"]
+REFERENCE_FILE = REF_DIR + config["basename"]
+ADAPTERS = REF_DIR + config["adapters"]["trimmomatic"]
+CHROMOSOMES = REF_DIR + config['chromosomes']
+DBSNP = REF_DIR + config["dbsnp"]
+READ_INDEX = ['1','2']
+READGROUP_FILE = REF_DIR + config['read_groups']
+n_of_chunks = config["n_of_chunks"]
+opt_duplicate = config['optical_duplicate_pixel_distance']
+
+#########################################################################################
+# Directory structure
+#########################################################################################
+FASTQC_DIR = OUTPUT_DIR + "fastqc/"
+ALIGN_DIR = OUTPUT_DIR + "alignment/"
+RECAL_DIR = OUTPUT_DIR + "base_quality_recal/"
+STAT_DIR = OUTPUT_DIR + "stat_and_coverage/"
+TRIMMED_DATA = OUTPUT_DIR + "trimmed_data/"
+LOGS = OUTPUT_DIR + "logs/"
+CONTIGS_DIR = OUTPUT_DIR + "contigs/"
+GVCF_DIR = OUTPUT_DIR + "gvcfs/"
+VCF_DIR = OUTPUT_DIR + "vcfs/"
+SNPINDELS_DIR = OUTPUT_DIR + "snps_indels/"
+LOG_DIR =  OUTPUT_DIR + "logs/"
+FINAL_DIR = OUTPUT_DIR + "final_results/"
+
+
+#########################################################################################
+# regular expression matching to get sample names
+#########################################################################################
+
+samples, glob_wildcards(join(RAW_FASTQ_DIR + "{sample}_R1.fastq.gz"))
+
+
+# Get list of samples from file names
+def get_sample_names(sam_list):
+    sample_list = []
+    run_ids = []
+    flow_cells = []
+    s_values = []
+    for filename in sam_list:
+        filenameparts = filename.split("_")
+        sample_name = filenameparts[0] # CTD113
+        sample_list.append(sample_name)
+        run_name = filenameparts[0] + "_" + filenameparts[1] + "_" + filenameparts[2]
+        s_value = filenameparts[1]  # CKDN240009926-1A
+        s_values.append(s_value)
+        run_ids.append(run_name)
+        flow_cells.append(filenameparts[2])  # 22KV7KLT3
+    return sample_list, s_values, run_ids, flow_cells
+
+list_of_samples, s_values, run_ids, flow_cells = get_sample_names(samples)
+
+## Get list of samples from readgroup file
+def get_readgroup_samples():
+    rg_list = pd.read_csv(READGROUP_FILE, sep='\t')
+    sam_list_all = rg_list['SM'].tolist()
+    sam_list = list(set(sam_list_all))
+    return sam_list
+
+#list_of_samples = get_readgroup_samples()
+
+# Get genomic intervals from config file
+chr_list = [config["chr_prefix"] + str(i) for i in range(int(config["autosomes_range_first"]),
+                                                         int(config["autosomes_range_last"]) + 1)] + \
+           config["other_chrs"]
+
+contigs_names_file =  CONTIGS_REF + config["contigs_names_file"]
+n_of_contigs = config["n_of_contigs"]
+
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
+contigs_part = list(range(0,len(range(0,  len(open(contigs_names_file).readlines()), n_of_contigs))))
+contigs_part = ['con' + str(i) for i in contigs_part]
+contigs_subsets = chunks(open(contigs_names_file).readlines(), n_of_contigs)
+chrs_n_conts = chr_list + contigs_part
+
+
+# Get names of samples from bam files
+bam_samples, = glob_wildcards(join(GVCF_DIR, "chrs/{sample}.1.g.vcf.gz"))
+
+
+
+#########################################################################################
+# rule to trigger generation of target files
+#########################################################################################
+rule final:
+    input:
+#        expand(FASTQC_DIR + "{sample}_{RR}_fastqc.zip", sample=samples, RR=READ_INDEX),
+#        expand(RAW_FASTQ_DIR + "split/{sample}_R2_part{new}.fq.gz", sample=samples, new=range(n_of_chunks)),
+#        expand(TRIMMED_DATA + "trimmomatic/{sample}_R1_part{new}.trimP.fq.gz", sample=samples, new=range(n_of_chunks)),
+#        expand(FASTQC_DIR + "{sample}_R1_part{new}.trimP_fastqc.zip", sample=samples, new=range(n_of_chunks)),
+#         expand(ALIGN_DIR + "{sample}_part{new}.sam", sample=samples, new=range(n_of_chunks)),
+#        expand(ALIGN_DIR + "{sample}_part{new}.bam", sample=samples, new=range(n_of_chunks)),
+#        expand(ALIGN_DIR + "{sample}.m.bam", sample=samples),
+#        expand(ALIGN_DIR + "{sample_list_val}.m.md.bam", sample_list_val=list_of_samples),
+#        expand(RECAL_DIR + "{sample_list_val}.m.md.recal_plots.pdf", sample_list_val=list_of_samples),
+#        expand(STAT_DIR + "{sample_list_val}.m.md.recal.bam.stats.txt", sample_list_val=list_of_samples),
+#        expand(STAT_DIR + "{sample_list_val}.bam.depth.sample_summary", sample_list_val=list_of_samples),
+#        expand(CONTIGS_DIR + 'contigs_names_{contigs_interval}.geneintervals.bed', contigs_interval=contigs_part),
+#        expand(GVCF_DIR + "chrs/validate/{sample}.1.g.vcf.txt", sample=bam_samples),
+#        expand(GVCF_DIR + "genomics_db_{chrs_interval}", chrs_interval=chr_list),
+#        expand(VCF_DIR + "chrs/{chrs_interval}.gt.vcf", chrs_interval=chr_list),
+#        GVCF_DIR + "contigs_merged/contigs.g.vcf.gz",
+#        VCF_DIR + "contigs.gt.vcf",
+#        expand(GVCF_DIR  + "contigs_merged/{sample}.g.vcf", sample=bam_samples),
+#        expand(SNPINDELS_DIR + "chrs/{chrs_interval}.raw_snps.vcf", chrs_interval=chr_list),
+#        SNPINDELS_DIR + "contigs.raw_snps.vcf",
+#        expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_snps.vcf", chrs_interval=chr_list),
+#        SNPINDELS_DIR + "SNPs.vcf",
+#        expand(SNPINDELS_DIR + "chrs/{chrs_interval}.raw_indels.vcf", chrs_interval=chr_list),
+#        expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_indels.vcf", chrs_interval=chr_list),
+#        SNPINDELS_DIR + "Indels.vcf",
+        FINAL_DIR + "SNPs.vcf.gz",
+        FINAL_DIR + "Indels.vcf.gz",
+        FINAL_DIR + "statistics.txt",
+        FINAL_DIR + "vc_md5sum.txt"
+
+
+
+#########################################################################################
+# run fastqc on raw data
+#########################################################################################
+rule fastqc_raw:
+    input:
+        RAW_FASTQ_DIR + "{sample}_{RR}.fq.gz"
+    output:
+        FASTQC_DIR + "{sample}_{RR}_fastqc.zip"
+    threads: 2
+    resources:
+        cores = 1,
+        runtime = 480,
+        mem_mb = 4000,
+    shell:
+        """
+        module load fastqc
+        fastqc -t {threads} --outdir {FASTQC_DIR} {input}
+        """
+
+
+#########################################################################################
+# split data into n-chunks for faster mapping
+#########################################################################################
+rule split:
+    input:
+        r1 = RAW_FASTQ_DIR + "{sample}_1.fq.gz",
+        r2 = RAW_FASTQ_DIR + "{sample}_2.fq.gz"
+    threads: 1
+    resources:
+        cores = 1,
+        runtime = 480,
+        mem_mb = 20000,
+
+    output:
+        expand(RAW_FASTQ_DIR + "split/{{sample}}_R{{RR}}_part{new}.fq.gz", new=range(n_of_chunks))
+    params:
+        r1 = lambda wildcards: RAW_FASTQ_DIR + "split/" + wildcards.sample + '_R1_part',
+        r2 = lambda wildcards: RAW_FASTQ_DIR + "split/" + wildcards.sample + '_R2_part',
+    shell:
+        """
+        module load bbmap
+        partition.sh in={input.r1} in2={input.r2} out={params.r1}%.fq.gz \
+                out2={params.r2}%.fq.gz ways={n_of_chunks};\
+        touch {output}
+        """
+
+
+#########################################################################################
+# run trimmomatic on raw data
+#########################################################################################
+rule trimmomatic:
+    input:
+        r1 = (RAW_FASTQ_DIR + "split/{sample}_R1_part{new}.fq.gz"),
+        r2 = (RAW_FASTQ_DIR + "split/{sample}_R2_part{new}.fq.gz")
+    output:
+        p1 = TRIMMED_DATA + "trimmomatic/{sample}_R1_part{new}.trimP.fq.gz",
+        p2 = TRIMMED_DATA + "trimmomatic/{sample}_R2_part{new}.trimP.fq.gz",
+        s1 = TRIMMED_DATA + "trimmomatic/{sample}_R1_part{new}.trimS.fq.gz",
+        s2 = TRIMMED_DATA + "trimmomatic/{sample}_R2_part{new}.trimS.fq.gz",
+    threads: 8
+    resources:
+        cores = 8,
+        runtime = 480,
+        mem_mb = 32000,
+    log:
+        LOGS + "trimmomatic-{sample}_part{new}.summary"
+    shell:
+        """
+        module load trimmomatic
+        trimmomatic PE -threads {threads} \
+                {input.r1} {input.r2} {output.p1} {output.s1} {output.p2} {output.s2} \
+                ILLUMINACLIP:{ADAPTERS}:2:30:10:2:true LEADING:3 TRAILING:3 \
+                MINLEN:36 -phred33 2> {log}
+        """
+
+
+#########################################################################################
+# run fastqc on trimmed data
+#########################################################################################
+rule fastqc_trimmed:
+    input:
+        TRIMMED_DATA + "trimmomatic/{sample}_R1_part{new}.trimP.fq.gz",
+        TRIMMED_DATA + "trimmomatic/{sample}_R2_part{new}.trimP.fq.gz"
+    output:
+        FASTQC_DIR + "{sample}_R1_part{new}.trimP_fastqc.zip",
+        FASTQC_DIR + "{sample}_R2_part{new}.trimP_fastqc.zip"
+    threads: 4
+    resources:
+        cores = 4,
+        runtime = 240,
+        mem_mb = 8000,
+    shell:
+        """
+        module load fastqc
+        fastqc -t {threads} --outdir {FASTQC_DIR} {input}
+        """
+
+
+#########################################################################################
+# map reads to reference genome, sort and index bam file
+#########################################################################################
+
+rule bwa_index:
+    input:
+        CONTIGS_REF + config["basename"] + ".fa.gz"
+    output:
+        CONTIGS_REF + config["basename"] + ".fa.gz.sa"
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 30,
+        mem_mb = 4000,
+    shell:
+        """
+        module load bwa
+        bwa index {input}
+        """
+
+def get_rg_label(sample):
+    rg_list = pd.read_csv(READGROUP_FILE, sep='\t')
+    sample_parts = sample.split("_")
+    ln = sample_parts[3]
+    ln_num = ln.replace("L", "")
+    pu = sample_parts[2] + "." + ln_num + "." + sample_parts[0]
+    line = rg_list[rg_list['PU'] == pu].copy()
+    ID = line['ID'].values[0]
+    LB = line['LB'].values[0]
+    SM = line['SM'].values[0]
+    PU = line['PU'].values[0]
+    RGtext  = "@RG\\tID:" + ID
+    PUtext = "\\tPU:" + PU
+    SMtext = "\\tSM:" + SM
+    PLtext = "\\tPL:ILLUMINA"
+    LBtext = "\\tLB:" + LB
+    rg_label = RGtext+PUtext+PLtext+LBtext+SMtext
+    return rg_label
+
+rule bwa_map:
+    input:
+        r1 = TRIMMED_DATA + "trimmomatic/{sample}_R1_part{new}.trimP.fq.gz",
+        r2 = TRIMMED_DATA + "trimmomatic/{sample}_R2_part{new}.trimP.fq.gz",
+    output:
+        ALIGN_DIR + "{sample}_part{new}.sam",
+    threads:
+        8
+    params:
+        sm_n = "{sample}_{new}",
+        sm = "{sample}",
+        RG_label = lambda wildcards: get_rg_label('{sample}'.format(sample=wildcards.sample)),
+        reference = CONTIGS_REF + config["basename"] + ".fa.gz"
+    resources:
+        cores = 8,
+        runtime = 480,
+        mem_mb = 32000,
+    shell:
+        """
+        module load bwa;
+        bwa mem -M -R '{params.RG_label}' -t {threads} \
+                {params.reference} {input.r1} {input.r2}  > {output}
+        """
+
+
+#########################################################################################
+# convert SAM to BAM 
+#########################################################################################
+rule sam_to_sorted_bam:
+    input:
+        ALIGN_DIR + "{sample}_part{new}.sam"
+    output:
+        bam = ALIGN_DIR + "{sample}_part{new}.bam",
+        bai = ALIGN_DIR + "{sample}_part{new}.bai"
+    threads: 8
+    resources:
+        cores = 8,
+        runtime = 420,
+        mem_mb = 64000,
+    shell:
+        """
+        module load picard;
+        java  -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar  SortSam \
+            --INPUT {input} --OUTPUT {output.bam} \
+            --CREATE_INDEX TRUE \
+            --MAX_RECORDS_IN_RAM 50000 \
+            --SORT_ORDER coordinate
+            """
+
+#########################################################################################
+# merge bam file by genome
+#########################################################################################
+
+rule merge_bam:
+    input:
+        bam = expand(ALIGN_DIR + "{{sample}}_part{new}.bam",
+                new = [str(i) for i in list(range(n_of_chunks))]),
+        bai = expand(ALIGN_DIR + "{{sample}}_part{new}.bai",
+                new = [str(i) for i in list(range(n_of_chunks))]),
+    output:
+        ALIGN_DIR + "{sample}.m.bam"
+    params:
+        bam = ' '.join(["-I " + ALIGN_DIR + "{sample}_part" + str(new) + ".bam" for new in \
+                list(range(n_of_chunks))]),
+    resources:
+        cores = 1,
+        runtime = 360,
+        mem_mb = 4000,
+    shell:
+        """
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar  MergeSamFiles {params.bam} -O {output}
+        """
+
+#########################################################################################
+# aggregate samples that have been sequenced on multiple lanes and deduplicate again (GATK best practices)
+#########################################################################################
+
+def create_input_list(sample_name):
+    """
+    Generates an input line for MarkDuplicates for samples that need to be aggregated
+    :param sample_name: base name of a sample (not the whole file name
+    :return: -I FC1_L1_SAM1.bam -I FC1_L2_SAM1.bam -I FC2_L1_SAM1.bam
+    """
+    aligndir_files = os.listdir(ALIGN_DIR)
+    m_bam_list = []
+    for file in aligndir_files:
+        if file.endswith(".m.bam"):
+            m_bam_list.append(file)
+    keep_bams = []
+    for bam in m_bam_list:
+        split_bam_name = bam.split("_")
+        if sample_name == split_bam_name[0]:
+            keep_bams.append(bam)
+    input_string = ''
+    for kept_bam in keep_bams:
+        input_string = input_string + " -I " + ALIGN_DIR + kept_bam + " "
+    new_input_string = input_string[:-1]
+    return new_input_string
+
+rule agg_and_dedup:
+    input:
+   #     [ALIGN_DIR + "{sample}_{s_value}_{fc}.m.bam".format(sample=list_of_samples, s_value=s_values, fc=flow_cells) for list_of_samples,s_values,flow_cells in zip(list_of_samples, s_values, flow_cells)]
+        expand(ALIGN_DIR + "{sample}.m.bam", sample=samples)
+    params:
+        input_line = lambda wildcards: create_input_list('{val}'.format(val=wildcards.sample_list_val)),
+        tmpdir = "./tmp_{sample_list_val}"
+    output:
+        mdbam = ALIGN_DIR + "{sample_list_val}.m.md.bam",
+        metrics = ALIGN_DIR + "{sample_list_val}.m.md.bam.txt"
+    threads: 1
+    resources:
+        cores = 1,
+        runtime = 480,
+        mem_mb = 257000,
+    shell:
+        """
+        module load picard
+        mkdir -p {params.tmpdir}; \
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar  MarkDuplicates \
+             {params.input_line} \
+            -O {output.mdbam} \
+            --METRICS_FILE {output.metrics} \
+            --ASSUME_SORTED true \
+            --MAX_FILE_HANDLES_FOR_READ_ENDS_MAP 1000 \
+            --OPTICAL_DUPLICATE_PIXEL_DISTANCE {opt_duplicate} \
+            --MAX_RECORDS_IN_RAM 150000  \
+            --VALIDATION_STRINGENCY LENIENT ;
+        rm -rf {params.tmpdir}
+        """
+
+rule build_bai:
+    input:
+        ALIGN_DIR + "{sample_list_val}.m.md.bam"
+    output:
+        ALIGN_DIR + "{sample_list_val}.m.md.bai"
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 180,
+        mem_mb = 8000,
+    shell:
+        """
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar BuildBamIndex -I {input} -O {output}
+        """
+
+#########################################################################################
+# base quality recalibration of BAM
+#########################################################################################
+
+rule create_faidx:
+    input:
+        CONTIGS_REF + config["basename"] + ".fa"
+    output:
+        CONTIGS_REF + config["basename"] + ".fa.fai"
+
+    shell:
+        """
+        module load samtools
+        samtools faidx {input}
+        """
+
+rule create_dict:
+    input:
+        CONTIGS_REF + config["basename"] + ".fa"
+    output:
+        CONTIGS_REF + config["basename"] + ".dict"
+    shell:
+        """
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar  CreateSequenceDictionary -R {input} -O {output}
+        """
+
+rule index_vcf:
+    input:
+        DBSNP
+    output:
+        DBSNP + ".gz.tbi"
+    shell:
+        """
+        module load samtools
+        bgzip -c {input} > {input}.gz
+        tabix -p vcf {input}.gz
+        """
+
+rule counts1_for_BQSR:
+    input:
+        bam = ALIGN_DIR + "{sample_list_val}.m.md.bam",
+        bai = ALIGN_DIR + "{sample_list_val}.m.md.bai",
+        idx = CONTIGS_REF + config["basename"] + ".fa.fai",
+        pc_dict = CONTIGS_REF + config["basename"] + ".dict",
+        vcf_idx = DBSNP + ".gz.tbi"
+    output:
+        RECAL_DIR + "{sample_list_val}.m.md.recalibration_report.grp"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 32
+    resources:
+        cores = 32,
+        runtime = 480,
+        mem_mb = 125000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            BaseRecalibrator \
+            -I {input.bam} \
+            -R {params.reference} \
+            --bqsr-baq-gap-open-penalty 45 \
+            --known-sites {DBSNP} \
+            -O {output}
+        """
+
+
+rule base_recal:
+    input:
+        bam = ALIGN_DIR + "{sample_list_val}.m.md.bam",
+        counts = RECAL_DIR + "{sample_list_val}.m.md.recalibration_report.grp",
+    output:
+        rec = RECAL_DIR + "{sample_list_val}.m.md.recal.bam",
+        bai = RECAL_DIR + "{sample_list_val}.m.md.recal.bai"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+        tmpdir = "./tmp",
+    threads: 20
+    resources:
+        cores = 20,
+        runtime = 2400,
+        mem_mb = 72000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            ApplyBQSR \
+            -I {input.bam} \
+            --bqsr-recal-file {input.counts} \
+            -R {params.reference} \
+            -O {output.rec}
+        rm -rf {params.tmpdir}
+        """
+
+
+rule counts2_for_BQSR:
+    input:
+        bam = RECAL_DIR + "{sample_list_val}.m.md.recal.bam",
+    output:
+        RECAL_DIR + "{sample_list_val}.m.md.recalibration_report2.grp"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 600,
+        mem_mb = 4000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            BaseRecalibrator \
+            -I {input.bam} \
+            -R {params.reference} \
+            --bqsr-baq-gap-open-penalty 45 \
+            --known-sites {DBSNP} \
+            -O {output}
+        """
+
+
+rule analyze_covariates:
+    input:
+        counts = RECAL_DIR + "{sample_list_val}.m.md.recalibration_report.grp",
+        counts2 = RECAL_DIR + "{sample_list_val}.m.md.recalibration_report2.grp"
+    output:
+        RECAL_DIR + "{sample_list_val}.m.md.recal_plots.pdf"
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 10,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        module load r
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            AnalyzeCovariates \
+            -before {input.counts} \
+            -after {input.counts2} \
+            -plots {output}
+        """
+
+
+#########################################################################################
+# basic stats on bam file
+#########################################################################################
+rule bam_stats:
+    input:
+        bam = RECAL_DIR + "{sample_list_val}.m.md.recal.bam",
+        #bai = RECAL_DIR + "{new_sample}.bai"
+    threads: 1
+    resources:
+        cores = 1,
+        runtime = 240,
+        mem_mb = 4000,
+    output:
+        STAT_DIR + "{sample_list_val}.m.md.recal.bam.stats.txt"
+    shell:
+        """
+        module load samtools
+        samtools flagstat {input.bam} > {output}
+        """
+
+
+#########################################################################################
+# calculate depth of coverage for a BAM
+#########################################################################################
+rule depth_of_coverage:
+    input:
+        bam = RECAL_DIR + "{sample_list_val}.m.md.recal.bam",
+        #bai = RECAL_DIR + "renamed/{new_sample}.bai"
+    output:
+        summary = STAT_DIR + "{sample_list_val}.bam.depth.sample_summary"
+    params:
+        basename = lambda wildcards: STAT_DIR + wildcards.sample_list_val + '.bam.depth',
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 1080,
+        mem_mb = 4000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            DepthOfCoverage \
+            -R {params.reference} \
+            -L {CHROMOSOMES} \
+            -I {input.bam} \
+            --summary-coverage-threshold 10 --summary-coverage-threshold 20 \
+            --summary-coverage-threshold 30 --summary-coverage-threshold 40 \
+            --summary-coverage-threshold 50 --summary-coverage-threshold 80 \
+            --summary-coverage-threshold 90 --summary-coverage-threshold 100 \
+            --summary-coverage-threshold 150 --min-base-quality 15 \
+            --read-filter MappingQualityReadFilter \
+            --minimum-mapping-quality 30 \
+            --start 1 --stop 1000 --nBins 999 \
+            --omit-interval-statistics \
+            --omit-depth-output-at-each-base \
+            --verbosity ERROR \
+            -O {params.basename}
+            """
+
+
+########################################################################################################################
+# SNP calling
+########################################################################################################################
+
+########################################################################################################################
+# make set of files carrying contigs names for further batch processing (adjust n_of_contigs_per_chunk as needed)
+########################################################################################################################
+rule split_contigs_list:
+    input:
+        file = contigs_names_file
+    output:
+        file =  expand(CONTIGS_DIR + 'contigs_names_{contigs_interval}.geneintervals.bed', contigs_interval=contigs_part)
+    params:
+        contigs_subsets = list(chunks(open(contigs_names_file).readlines(), n_of_contigs)),
+    run:
+        for ix,file in enumerate(output.file):
+            fout = open(file,'w')
+            fout.writelines(''.join(params.contigs_subsets[ix]))
+            fout.close()
+
+########################################################################################################################
+# Run haplotype caller on contigs (1 job per contig chunk)
+########################################################################################################################
+
+rule haplotype_caller_contigs:
+    input:
+        bam = RECAL_DIR + "{sample}.m.md.recal.bam",
+    output:
+        expand(GVCF_DIR + "contigs/{{sample}}.{{contigs_interval}}.g.vcf.gz", sample=bam_samples)
+    params:
+        tmpdir =  "./tmp",
+        contigs_file = lambda wildcards: CONTIGS_DIR + 'contigs_names_' + wildcards.contigs_interval + \
+                '.geneintervals.bed',
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 4
+    resources:
+        cores = 4,
+        runtime = 360,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        mkdir -p {params.tmpdir};  \
+        gatk --java-options "-Xmx{resources.mem_mb}m" \
+        HaplotypeCaller \
+        -R {params.reference} \
+        -I {input.bam} \
+        -L {params.contigs_file} \
+        --emit-ref-confidence GVCF \
+        -O {output}
+        """
+
+########################################################################################################################
+#  Merge contig *.G.VCF files
+########################################################################################################################
+
+
+rule merge_gvcf_contigs:
+    input:
+        expand(GVCF_DIR + "contigs/{{sample}}.{contigs_interval}.g.vcf.gz", contigs_interval=contigs_part)
+    output:
+        GVCF_DIR  + "contigs_merged/{sample}.g.vcf"
+    params:
+        tmpdir = "./tmpdir",
+        variants = " -V ".join(expand(GVCF_DIR + "contigs/{{sample}}.{contigs_interval}.g.vcf.gz",
+                                      contigs_interval=contigs_part)),
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            --java-options "-Xmx{resources.mem_mb}m" \
+            CombineGVCFs \
+            -R {params.reference} \
+            -V {params.variants} \
+            -O {output}
+        """
+
+
+rule merge_all_contigs:
+    input:
+        expand(GVCF_DIR + "contigs_merged/{sample}.g.vcf", sample=bam_samples),
+    output:
+        GVCF_DIR + "contigs_merged/contigs.g.vcf.gz"
+    params:
+        tmpdir = GVCF_DIR + "tmpdir_contigs",
+        variants = " -V ".join(expand(GVCF_DIR + "contigs_merged/{sample}.g.vcf", sample=bam_samples)),
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 8
+    resources:
+        cores = 8,
+        runtime = 720,
+        mem_mb = 16000,
+    shell:
+        """
+        module load gatk;
+        mkdir -p {params.tmpdir};
+        gatk \
+        --java-options "-Xmx{resources.mem_mb}m" \
+            CombineGVCFs \
+            -R {params.reference} \
+            -V {params.variants} \
+            -O {output} \
+            --use-jdk-inflater
+        rm -rf {params.tmpdir}
+        """
+########################################################################################################################
+# Run haplotype caller on chromosmes (1 job per chr)
+########################################################################################################################
+rule haplotype_caller_chrs:
+    input:
+        bam = RECAL_DIR + "{sample}.m.md.recal.bam",
+    output:
+        expand(GVCF_DIR + "chrs/{{sample}}.{{chrs_interval}}.g.vcf.gz"),
+    params:
+        tmpdir = "./tmpdir",
+        chrom = lambda wildcards: wildcards.chrs_interval,
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 4
+    resources:
+        cores = 4,
+        runtime = 720,
+        mem_mb = 8000,
+    log:
+        expand(LOG_DIR + "chrs/{{sample}}.{{chrs_interval}}.txt")
+    shell:
+        """
+        module load gatk
+        gatk \
+        --java-options "-Xmx{resources.mem_mb}m" \
+        HaplotypeCaller \
+        -R {params.reference} \
+        -I {input.bam} \
+        -L {params.chrom}  \
+        -ERC GVCF \
+        -O {output} 2> {log}
+        """
+
+rule validate_vcf:
+    input: 
+        GVCF_DIR + "chrs/{sample}.1.g.vcf.gz"
+    output: 
+        GVCF_DIR + "chrs/validate/{sample}.1.g.vcf.txt"
+    params:
+        tmpdir = "./tmpdir",
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+        unzipped = GVCF_DIR + "chrs/{sample}.1.g.vcf"
+    threads: 32
+    resources:
+        cores = 32,
+        runtime = 360,
+        mem_mb = 30000,
+    shell:
+        """
+        module load gatk
+        gunzip -k {input}
+        gatk \
+        --java-options "-Xmx{resources.mem_mb}m" \
+            ValidateVariants \
+            -R  {params.reference}\
+            -V {params.unzipped} \
+            --dbsnp {DBSNP} \
+            --validation-type-to-exclude ALL \
+            > {output}
+        """
+
+########################################################################################################################
+# Create GenomicsDB database per chromosome
+########################################################################################################################
+
+rule gdbi_chromosomes:
+    input:
+        expand(GVCF_DIR + "chrs/{sample}.{{chrs_interval}}.g.vcf.gz", sample=bam_samples),
+    output:
+        directory(GVCF_DIR + "genomics_db_{chrs_interval}")
+    params:
+        tmpdir = lambda wildcards: GVCF_DIR + "tmpdir_" + wildcards.chrs_interval,
+        chrs = lambda wildcards: wildcards.chrs_interval,
+        realmem = 14000,
+        infiles = " -V ".join(expand(GVCF_DIR + "chrs/{sample}.{{chrs_interval}}.g.vcf.gz", sample=bam_samples))
+    threads: 8
+    resources:
+        cores = 8,
+        runtime = 480,
+        mem_mb = 16000,
+    shell:
+        """
+        module load gatk;
+        mkdir -p {params.tmpdir};
+        gatk \
+        --java-options "-Xmx{params.realmem}m" \
+        GenomicsDBImport \
+        --genomicsdb-shared-posixfs-optimizations \
+        -V  {params.infiles} \
+        --genomicsdb-workspace-path {output} \
+        --tmp-dir {params.tmpdir} \
+        -L {params.chrs} \
+        --use-jdk-inflater
+        """
+
+########################################################################################################################
+# Genotype chromosomes and contigs
+########################################################################################################################
+
+rule genotype_chrs:
+    input:
+        GVCF_DIR + "genomics_db_{chrs_interval}",
+    output:
+        gt = VCF_DIR + "chrs/{chrs_interval}.gt.vcf"
+    params:
+        tmpdir = lambda wildcards: "tmpdir_" + wildcards.chrs_interval,
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 720,
+        mem_mb = 16000,
+    shell:
+        """
+        module load gatk
+        mkdir -p {params.tmpdir}
+        gatk \
+        --java-options "-Xmx8000m -XX:ParallelGCThreads=2"  \
+            GenotypeGVCFs \
+            --tmp-dir {params.tmpdir} \
+            -R {params.reference} \
+            -V gendb://{input} \
+            --use-jdk-inflater \
+            --genomicsdb-shared-posixfs-optimizations \
+            -O  {output.gt}
+        """
+
+
+
+rule genotype_contigs:
+    input:
+        GVCF_DIR + "contigs_merged/contigs.g.vcf.gz",
+    output:
+        gt = VCF_DIR + "contigs.gt.vcf",
+    params:
+        tmpdir = "tmpdir_contigs" ,
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 120,
+        mem_mb = 16000,
+    shell:
+        """
+        module load gatk
+	    gatk \
+        --java-options "-Xmx8000m -XX:ParallelGCThreads=2" \
+            GenotypeGVCFs \
+            -R {params.reference} \
+            -V {input} \
+            -O  {output.gt}; \
+        """
+########################################################################################################################
+# Extract SNPs from chromosomes and contigs
+########################################################################################################################
+
+
+rule extract_snps_chrs:
+    input:
+        VCF_DIR + "chrs/{chrs_interval}.gt.vcf",
+    output:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.raw_snps.vcf",
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            SelectVariants \
+            -R {params.reference} \
+            -V {input} \
+            --select-type-to-include SNP \
+            -O {output}
+        """
+
+
+rule extract_snps_contigs:
+    input:
+        VCF_DIR + "contigs.gt.vcf"
+    output:
+        SNPINDELS_DIR + "contigs.raw_snps.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            SelectVariants \
+            -R {params.reference} \
+            -V {input} \
+            --select-type-to-include SNP \
+            -O {output}
+        """
+########################################################################################################################
+# Filter SNPs from chromosomes and contigs
+########################################################################################################################
+
+
+rule filter_snps_chrs:
+    input:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.raw_snps.vcf"
+    output:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_snps.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 30,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            VariantFiltration \
+            -R {params.reference} \
+            -V {input} \
+            --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0" \
+            --filter-name "my_snp_filter" \
+            --verbosity ERROR \
+            -O {output}
+        """
+
+
+rule filter_snps_contigs:
+    input:
+        SNPINDELS_DIR + "contigs.raw_snps.vcf"
+    output:
+        SNPINDELS_DIR + "contigs.filtered_snps.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            VariantFiltration \
+            -R {params.reference} \
+            -V {input} \
+            --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0" \
+            --filter-name "my_snp_filter" \
+            --verbosity ERROR \
+            -O {output}
+        """
+########################################################################################################################
+# Concatenate chromosome and contig vcf files
+########################################################################################################################
+
+rule cat_snps:
+    input:
+        expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_snps.vcf", chrs_interval=chr_list),
+        [SNPINDELS_DIR +  "contigs.filtered_snps.vcf"],
+    output:
+        SNPINDELS_DIR + "SNPs.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+        variants = " -I ".join(expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_snps.vcf", chrs_interval=chr_list) + \
+                [SNPINDELS_DIR + "contigs.filtered_snps.vcf"]),
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 120,
+        mem_mb = 32000,
+    shell:
+        """
+        module load picard
+        java -Xmx{resources.mem_mb}m -jar $EBROOTPICARD/picard.jar \
+            GatherVcfs \
+            -R {params.reference} \
+            -I {params.variants} \
+            -O {output} \
+        """
+########################################################################################################################
+# Extract Indels from chromosomes and contigs
+########################################################################################################################
+
+
+rule extract_indels_chrs:
+    input:
+        VCF_DIR + "chrs/{chrs_interval}.gt.vcf"
+    output:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.raw_indels.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            SelectVariants \
+            -R {params.reference} \
+            -V {input} \
+            --select-type-to-include INDEL \
+            -O {output}
+        """
+
+
+rule extract_indels_contigs:
+    input:
+        VCF_DIR + "contigs.gt.vcf"
+    output:
+        SNPINDELS_DIR + "contigs.raw_indels.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            SelectVariants \
+            -R {params.reference} \
+            -V {input} \
+            --select-type-to-include INDEL \
+            -O {output}
+        """
+
+########################################################################################################################
+# Filter Indels from chromosomes and contigs
+########################################################################################################################
+
+
+rule filter_indels_chrs:
+    input:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.raw_indels.vcf"
+    output:
+        SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_indels.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 2
+    resources:
+        cores = 2,
+        runtime = 60,
+        mem_mb = 8000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            VariantFiltration \
+            -R {params.reference} \
+            -V {input} \
+            --filter-expression "QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0" \
+            --filter-name "my_indel_filter" \
+            --verbosity ERROR \
+            -O {output}
+        """
+
+
+rule filter_indels_contigs:
+    input:
+        SNPINDELS_DIR + "contigs.raw_indels.vcf"
+    output:
+        SNPINDELS_DIR + "contigs.filtered_indels.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+    threads: 4
+    resources:
+        cores = 4,
+        runtime = 120,
+        mem_mb = 32000,
+    shell:
+        """
+        module load gatk
+        gatk \
+            VariantFiltration \
+            -R {params.reference} \
+            -V {input} \
+            --filter-expression "QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0" \
+            --filter-name "my_indel_filter" \
+            --verbosity ERROR \
+            -O {output}
+        """
+
+########################################################################################################################
+# Concatenate chromosome and contig vcf files
+########################################################################################################################
+
+rule cat_indels:
+    input:
+        [SNPINDELS_DIR + "contigs.filtered_indels.vcf"] +\
+                expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_indels.vcf", chrs_interval=chr_list),
+    output:
+        SNPINDELS_DIR + "Indels.vcf"
+    params:
+        reference = CONTIGS_REF + config["basename"] + ".fa",
+        variants = " -I ".join(expand(SNPINDELS_DIR + "chrs/{chrs_interval}.filtered_indels.vcf", chrs_interval=chr_list) + [SNPINDELS_DIR + "contigs.filtered_indels.vcf"]),
+    threads: 4
+    resources:
+        cores = 4,
+        runtime = 120,
+        mem_mb = 32000,
+    shell:
+        """
+        module load picard
+        java "-Xmx{resources.mem_mb}m" -jar $EBROOTPICARD/picard.jar GatherVcfs \
+            -R {params.reference} \
+            -I {params.variants} \
+            -O {output} \
+        """
+########################################################################################################################
+# Index and compress final files, create md5sums
+########################################################################################################################
+
+rule compress_snps:
+    input:
+        snps = SNPINDELS_DIR + "SNPs.vcf",
+        indels = SNPINDELS_DIR + "Indels.vcf"
+    output:
+        snps = FINAL_DIR + "SNPs.vcf.gz",
+        indels = FINAL_DIR + "Indels.vcf.gz",
+        snp_idx = FINAL_DIR + "SNPs.vcf.gz.tbi",
+        indel_idx = FINAL_DIR + "Indels.vcf.gz.tbi",
+    shell:
+        """
+        module load samtools
+        module load htslib
+        bgzip -c {input.snps} > {output.snps}
+        bgzip -c {input.indels} > {output.indels}
+        tabix -p vcf {output.snps}
+        tabix -p vcf {output.indels}
+        """
+
+rule pipeline_info:
+    input:
+        snps = FINAL_DIR + "SNPs.vcf.gz",
+        indels = FINAL_DIR + "Indels.vcf.gz",
+        snp_idx = FINAL_DIR + "SNPs.vcf.gz.tbi",
+        indel_idx = FINAL_DIR + "Indels.vcf.gz.tbi",
+    output:
+        wf = FINAL_DIR + "VariantCalling.sm",
+        vs = FINAL_DIR + "program_versions.txt"
+    shell:
+        """
+        cp workflow/snakefile {output.wf};
+        ./scripts/program_versions.sh {output.vs}
+        """
+
+
+rule create_md5s:
+    input:
+        snps = FINAL_DIR + "SNPs.vcf.gz",
+        indels = FINAL_DIR + "Indels.vcf.gz",
+        snp_idx = FINAL_DIR + "SNPs.vcf.gz.tbi",
+        indel_idx = FINAL_DIR + "Indels.vcf.gz.tbi",
+        wf = FINAL_DIR + "VariantCalling.sm",
+        vs = FINAL_DIR + "program_versions.txt"
+    output:
+        FINAL_DIR + "vc_md5sum.txt"
+    shell:
+        """
+        rm -f {output}
+        md5sum {FINAL_DIR}/* > {output}
+        """
