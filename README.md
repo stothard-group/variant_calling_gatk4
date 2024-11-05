@@ -106,6 +106,8 @@ For more information on read groups, see [Read groups](https://gatk.broadinstitu
 
 ## Running the Variant Calling workflow
 
+For more information about the workflow, see the [Variant_calling_workflow.md](Variant_calling_workflow.md)
+
 ### Input files
 
 The workflow expects paired-end fastq files as inputs, within a directory 
